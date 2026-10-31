@@ -34,7 +34,7 @@ document.querySelectorAll('#nav button').forEach(b => b.onclick = () => go(b.dat
 
 /* ===== نوافذ ===== */
 function modal(html) { const m = $('#modal'); m.innerHTML = '<div class="box">' + html + '</div>'; m.hidden = false; }
-function closeModal() { const m = $('#modal'); m.hidden = true; m.innerHTML = ''; }
+function closeModal() { const m = $('#modal'); m.hidden = true; m.innerHTML = ''; editAvail = {}; }
 $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && !$('#modal .row') && !$('#modal input')) closeModal(); });
 
 /* ===== الطباعة / PDF (من نافذة الطباعة اختار "حفظ كـ PDF") ===== */
@@ -115,15 +115,16 @@ function delProduct(id) {
 
 /* ===== نموذج الأصناف المشترك (مبيعات / مشتريات) ===== */
 let formKind = 'sale', paidTouched = false;
-function addRow(kind) {
+function addRow(kind, it) {
   const d = document.createElement('div');
   if (kind === 'sale') {
     d.className = 'row';
-    const ops = db.products.filter(p => p.qty > 0).map(p => `<option value="${p.id}" data-pr="${p.price}">${esc(p.name)} (متاح ${num(p.qty)})</option>`).join('');
-    d.innerHTML = `<select class="p" onchange="pick(this)"><option value="">اختر منتج</option>${ops}</select>
+    d.innerHTML = `<div class="ac"><input class="pn" placeholder="🔍 اكتب اسم المنتج للبحث..." autocomplete="off"><div class="sug" hidden></div></div>
       <input class="q" type="number" min="0" step="any" inputmode="decimal" value="1" placeholder="الكمية" oninput="calc()">
       <input class="pr" type="number" min="0" step="any" inputmode="decimal" placeholder="السعر" oninput="calc()">
       <span class="lt">0</span><button class="x" onclick="this.parentNode.remove();calc()">✕</button>`;
+    wireSearch(d);
+    if (it) { d.dataset.pid = it.pid; d.querySelector('.pn').value = it.name; d.querySelector('.q').value = it.qty; d.querySelector('.pr').value = it.price; }
   } else {
     d.className = 'row pu';
     d.innerHTML = `<input class="n" list="plist" placeholder="اسم المنتج">
@@ -134,11 +135,43 @@ function addRow(kind) {
   }
   $('#rows').appendChild(d);
 }
-function pick(sel) {
-  const row = sel.parentNode, o = sel.selectedOptions[0];
-  row.querySelector('.pr').value = o && o.dataset.pr ? o.dataset.pr : '';
+/* بحث المنتجات داخل فاتورة البيع: بيظهر المنتجات اللي بتبدأ بالحروف المكتوبة الأول، وبعدها اللي فيها الحروف */
+let editAvail = {};
+const availQty = p => p.qty + (editAvail[p.id] || 0);
+function wireSearch(row) {
+  const inp = row.querySelector('.pn'), box = row.querySelector('.sug');
+  const show = () => {
+    const q = inp.value.trim().toLowerCase();
+    let l = db.products.filter(p => availQty(p) > 0);
+    if (q) {
+      l = l.filter(p => p.name.toLowerCase().includes(q));
+      l.sort((a, b) => b.name.toLowerCase().startsWith(q) - a.name.toLowerCase().startsWith(q));
+    }
+    box.innerHTML = l.length
+      ? l.map(p => `<div class="si" data-id="${p.id}"><b>${esc(p.name)}</b><small>متاح ${num(availQty(p))} • ${money(p.price)}</small></div>`).join('')
+      : '<div class="si none">مفيش منتج بالاسم ده</div>';
+    box.hidden = false;
+  };
+  inp.addEventListener('focus', show);
+  inp.addEventListener('input', () => { delete row.dataset.pid; show(); });
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); const f = box.querySelector('.si[data-id]'); if (f) choose(row, f.dataset.id); }
+  });
+  box.addEventListener('click', e => { const s = e.target.closest('.si[data-id]'); if (s) choose(row, s.dataset.id); });
+}
+function choose(row, id) {
+  const p = db.products.find(x => x.id === id);
+  if (!p) return;
+  row.dataset.pid = id;
+  row.querySelector('.pn').value = p.name;
+  row.querySelector('.pr').value = p.price;
+  row.querySelector('.sug').hidden = true;
+  const q = row.querySelector('.q'); q.focus(); q.select();
   calc();
 }
+document.addEventListener('click', e => {
+  document.querySelectorAll('.sug').forEach(b => { if (!b.parentNode.contains(e.target)) b.hidden = true; });
+});
 function calc() {
   let t = 0;
   document.querySelectorAll('#rows .row').forEach(r => {
@@ -163,7 +196,7 @@ function invoiceHTML(inv, kind) {
   const who = isS ? (inv.cname ? 'العميل: ' + inv.cname : 'عميل نقدي (بدون اسم)') : 'المورد: ' + (inv.supplier || '—');
   const stamp = isS && db.settings.stamp ? `<div class="stamp"><img src="${db.settings.stamp}"></div>` : '<div></div>';
   return docHead(isS ? 'فاتورة مبيعات' : 'فاتورة مشتريات') +
-    `<div class="meta"><span>رقم الفاتورة: <b>${esc(inv.no)}</b></span><span>التاريخ: ${fmtDate(inv.date)}</span></div><div class="meta"><span>${esc(who)}</span></div>` +
+    `<div class="meta"><span>رقم الفاتورة: <b>${esc(inv.no)}</b></span><span>التاريخ: ${fmtDate(inv.date)}</span></div><div class="meta"><span>${esc(who)}</span>${inv.edited ? `<span class="sm">آخر تعديل: ${fmtDate(inv.edited)}</span>` : ''}</div>` +
     tableHTML(['#', 'الصنف', 'الكمية', 'السعر', 'الإجمالي'], rows) +
     `<div class="bt">${stamp}<div class="tt">الإجمالي: <b>${money(inv.total)}</b><br>المدفوع: ${money(inv.paid)}<br>الباقي: <b>${money(inv.remaining)}</b></div></div>`;
 }
@@ -192,37 +225,52 @@ function drawSales() {
   const l = db.sales.filter(s => !q || s.no.toLowerCase().includes(q) || (s.cname || 'نقدي').toLowerCase().includes(q)).slice().reverse();
   const tot = l.reduce((a, s) => a + s.total, 0), rem = l.reduce((a, s) => a + s.remaining, 0);
   $('#sstat').innerHTML = `<div class="cards"><div class="card"><small>عدد الفواتير</small><b>${l.length}</b></div><div class="card"><small>إجمالي المبيعات</small><b>${money(tot)}</b></div><div class="card"><small>إجمالي الباقي</small><b>${money(rem)}</b></div></div>`;
-  $('#tbl').innerHTML = `<table><thead><tr><th>رقم الفاتورة</th><th>التاريخ</th><th>العميل</th><th>الإجمالي</th><th>المدفوع</th><th>الباقي</th><th>إجراءات</th></tr></thead><tbody>${l.length ? l.map(s => `<tr><td><b>${esc(s.no)}</b></td><td>${fmtDate(s.date)}</td><td>${esc(s.cname || 'بدون عميل')}</td><td>${money(s.total)}</td><td>${money(s.paid)}</td><td class="${s.remaining > 0 ? 'neg' : ''}">${money(s.remaining)}</td><td class="act"><button class="btn sm" onclick="viewInvoice('${s.id}','sale')">👁 عرض</button><button class="btn sm ghost" onclick="printInvoice('${s.id}','sale')">🖨</button><button class="btn sm red" onclick="delSale('${s.id}')">🗑</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">مفيش فواتير</td></tr>'}</tbody></table>`;
+  $('#tbl').innerHTML = `<table><thead><tr><th>رقم الفاتورة</th><th>التاريخ</th><th>العميل</th><th>الإجمالي</th><th>المدفوع</th><th>الباقي</th><th>إجراءات</th></tr></thead><tbody>${l.length ? l.map(s => `<tr><td><b>${esc(s.no)}</b></td><td>${fmtDate(s.date)}</td><td>${esc(s.cname || 'بدون عميل')}</td><td>${money(s.total)}</td><td>${money(s.paid)}</td><td class="${s.remaining > 0 ? 'neg' : ''}">${money(s.remaining)}</td><td class="act"><button class="btn sm" onclick="viewInvoice('${s.id}','sale')">👁 عرض</button><button class="btn sm ghost" onclick="printInvoice('${s.id}','sale')">🖨</button><button class="btn sm ghost" onclick="saleForm('${s.id}')">✏️ تعديل</button><button class="btn sm red" onclick="delSale('${s.id}')">🗑</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">مفيش فواتير</td></tr>'}</tbody></table>`;
 }
-function saleForm() {
-  if (!db.products.some(p => p.qty > 0)) return alert('مفيش منتجات في المخزن. ضيف منتجات أو اعمل فاتورة مشتريات الأول.');
-  formKind = 'sale'; paidTouched = false;
-  modal(`<h3>فاتورة بيع جديدة</h3>
-    <label>العميل</label><select id="f_cust"><option value="">بدون عميل (نقدي)</option>${db.customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+function saleForm(editId) {
+  const inv = editId ? db.sales.find(s => s.id === editId) : null;
+  editAvail = {};
+  if (inv) inv.items.forEach(i => editAvail[i.pid] = (editAvail[i.pid] || 0) + i.qty);
+  else if (!db.products.some(p => p.qty > 0)) return alert('مفيش منتجات في المخزن. ضيف منتجات أو اعمل فاتورة مشتريات الأول.');
+  formKind = 'sale'; paidTouched = !!inv;
+  modal(`<h3>${inv ? 'تعديل فاتورة ' + esc(inv.no) : 'فاتورة بيع جديدة'}</h3>
+    <label>العميل</label><select id="f_cust"><option value="">بدون عميل (نقدي)</option>${db.customers.map(c => `<option value="${c.id}" ${inv && inv.cid === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
     <label>الأصناف</label><div id="rows"></div>
     <button class="btn ghost sm" onclick="addRow('sale')">+ إضافة صنف</button>
     ${totalsBlock()}
-    <div class="acts"><button class="btn grn" onclick="saveSale()">💾 حفظ الفاتورة</button><button class="btn ghost" onclick="closeModal()">إلغاء</button></div>`);
-  addRow('sale'); calc();
+    <div class="acts"><button class="btn grn" onclick="saveSale('${editId || ''}')">💾 ${inv ? 'حفظ التعديلات' : 'حفظ الفاتورة'}</button><button class="btn ghost" onclick="closeModal()">إلغاء</button></div>`);
+  if (inv) { inv.items.forEach(i => addRow('sale', i)); $('#f_paid').value = inv.paid; }
+  else addRow('sale');
+  calc();
 }
-function saveSale() {
-  const items = [];
+function saveSale(editId) {
+  const items = []; let bad = '';
   document.querySelectorAll('#rows .row').forEach(r => {
-    const pid = r.querySelector('.p').value, qty = +r.querySelector('.q').value, price = +r.querySelector('.pr').value;
-    if (pid && qty > 0) items.push({ pid, name: db.products.find(p => p.id === pid).name, qty, price: price || 0 });
+    const txt = r.querySelector('.pn').value.trim(), qty = +r.querySelector('.q').value, price = +r.querySelector('.pr').value;
+    let pid = r.dataset.pid;
+    if (!pid && txt) { const m = db.products.find(p => p.name.toLowerCase() === txt.toLowerCase()); if (m) pid = m.id; }
+    const p0 = pid && db.products.find(p => p.id === pid);
+    if (txt && !p0) { bad = txt; return; }
+    if (p0 && qty > 0) items.push({ pid, name: p0.name, qty, price: price || 0 });
   });
+  if (bad) return alert(`اختار "${bad}" من القايمة اللي بتظهر وانت بتكتب`);
   if (!items.length) return alert('ضيف صنف واحد على الأقل');
   const need = {};
   items.forEach(i => need[i.pid] = (need[i.pid] || 0) + i.qty);
-  for (const pid in need) { const p = db.products.find(x => x.id === pid); if (need[pid] > p.qty) return alert(`الكمية المطلوبة من "${p.name}" أكبر من المتاح (${num(p.qty)})`); }
+  for (const pid in need) { const p = db.products.find(x => x.id === pid); if (need[pid] > availQty(p)) return alert(`الكمية المطلوبة من "${p.name}" أكبر من المتاح (${num(availQty(p))})`); }
   const total = items.reduce((a, i) => a + i.qty * i.price, 0);
   const paid = +$('#f_paid').value || 0;
   const remaining = Math.max(0, total - paid);
   const cid = $('#f_cust').value || null;
   if (remaining > 0 && !cid) return alert('فيه باقي على الفاتورة - لازم تختار عميل عشان الباقي يتسجل عليه');
+  const old = editId && db.sales.find(s => s.id === editId);
+  if (old) old.items.forEach(i => { const p = db.products.find(x => x.id === i.pid); if (p) p.qty += i.qty; });
   for (const pid in need) db.products.find(x => x.id === pid).qty -= need[pid];
-  const inv = { id: uid(), no: 'S-' + pad(db.seq.sale++), date: new Date().toISOString(), cid, cname: cid ? db.customers.find(c => c.id === cid).name : '', items, total, paid: Math.min(paid, total), remaining };
-  db.sales.push(inv); save(); closeModal(); renderSales(); viewInvoice(inv.id, 'sale');
+  const cname = cid ? db.customers.find(c => c.id === cid).name : '';
+  let inv;
+  if (old) inv = Object.assign(old, { cid, cname, items, total, paid: Math.min(paid, total), remaining, edited: new Date().toISOString() });
+  else { inv = { id: uid(), no: 'S-' + pad(db.seq.sale++), date: new Date().toISOString(), cid, cname, items, total, paid: Math.min(paid, total), remaining }; db.sales.push(inv); }
+  save(); closeModal(); renderSales(); viewInvoice(inv.id, 'sale');
 }
 function delSale(id) {
   const s = db.sales.find(x => x.id === id);
@@ -389,8 +437,6 @@ function statement(id) {
 }
 
 /* ===== الإعدادات ===== */
-let deferredInstall = null;
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; if (page === 'settings') renderSettings(); });
 function renderSettings() {
   const s = db.settings;
   view.innerHTML = `<div class="bar"><h2>الإعدادات</h2></div>
@@ -404,13 +450,10 @@ function renderSettings() {
       ${s.stamp ? `<img class="stampprev" src="${s.stamp}">` : '<p class="note">لسه مفيش ختم.</p>'}
       <input type="file" id="s_stamp" accept="image/*">
       ${s.stamp ? '<div class="acts"><button class="btn red sm" onclick="removeStamp()">إزالة الختم</button></div>' : ''}</div>
-    <div class="card" style="margin-top:12px"><h3>📲 تثبيت على التليفون</h3>
-      <p class="note">افتح الموقع من المتصفح على التليفون (لازم يكون مرفوع على رابط https)، وبعدين: <br>• أندرويد (Chrome): القائمة ⋮ ← "تثبيت التطبيق" أو "إضافة إلى الشاشة الرئيسية".<br>• آيفون (Safari): زر المشاركة ← "إضافة إلى الشاشة الرئيسية".</p>
-      ${deferredInstall ? '<div class="acts"><button class="btn grn" onclick="installApp()">تثبيت التطبيق الآن</button></div>' : ''}</div>
     <div class="card" style="margin-top:12px"><h3>💾 نسخة احتياطية</h3>
-      <p class="note">البيانات محفوظة على نفس الجهاز والمتصفح. خد نسخة احتياطية من وقت للتاني.</p>
-      <div class="acts"><button class="btn ghost" onclick="exportData()">⬇️ تصدير نسخة</button><button class="btn ghost" onclick="$('#s_imp').click()">⬆️ استرجاع نسخة</button></div>
-      <input type="file" id="s_imp" accept=".json" hidden></div>`;
+      <p class="note">البيانات محفوظة على نفس الجهاز والمتصفح. خد نسخة احتياطية (ملف PDF) من وقت للتاني، واحتفظ بيها ومتعدلوش.</p>
+      <div class="acts"><button class="btn ghost" onclick="exportData()">⬇️ تصدير نسخة (PDF)</button><button class="btn ghost" onclick="$('#s_imp').click()">⬆️ استرجاع نسخة (PDF)</button></div>
+      <input type="file" id="s_imp" accept=".pdf,application/pdf" hidden></div>`;
   $('#s_stamp').onchange = e => loadStamp(e.target.files[0]);
   $('#s_imp').onchange = e => importData(e.target.files[0]);
 }
@@ -436,24 +479,68 @@ function loadStamp(file) {
   fr.readAsDataURL(file);
 }
 function removeStamp() { db.settings.stamp = ''; save(); renderSettings(); }
-async function installApp() { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; renderSettings(); }
+/*PDF-START*/
+/* النسخة الاحتياطية: ملف PDF صفحته الأولى ملخص مقروء، وجواه ملف بيانات مدمج بيستخدمه الاسترجاع */
+function buildPDF(jpegBin, jsonStr) {
+  const data = 'CASHIERDATA-BEGIN' + btoa(unescape(encodeURIComponent(jsonStr))) + 'CASHIERDATA-END';
+  const stream = (dict, body) => `<< ${dict} /Length ${body.length} >>\nstream\n${body}\nendstream`;
+  const objs = [null,
+    '<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(backup.json) 6 0 R] >> >> >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>',
+    stream('/Type /XObject /Subtype /Image /Width 1190 /Height 842 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode', jpegBin),
+    stream('', 'q 595 0 0 421 0 421 cm /Im0 Do Q'),
+    '<< /Type /Filespec /F (backup.json) /UF (backup.json) /EF << /F 7 0 R >> >>',
+    stream('/Type /EmbeddedFile', data)
+  ];
+  let out = '%PDF-1.7\n%\xE2\xE3\xCF\xD3\n';
+  const offs = [];
+  for (let i = 1; i < objs.length; i++) { offs[i] = out.length; out += `${i} 0 obj\n${objs[i]}\nendobj\n`; }
+  const xr = out.length;
+  out += `xref\n0 ${objs.length}\n0000000000 65535 f \n` + offs.slice(1).map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('') + `trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF`;
+  return out;
+}
+function extractBackup(txt) {
+  const m = /CASHIERDATA-BEGIN([A-Za-z0-9+\/=]+)CASHIERDATA-END/.exec(txt);
+  if (!m) return null;
+  return JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+}
+/*PDF-END*/
 function exportData() {
+  const c = document.createElement('canvas'); c.width = 1190; c.height = 842;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, 1190, 842);
+  x.fillStyle = '#1565c0'; x.fillRect(0, 0, 1190, 150);
+  x.direction = 'rtl'; x.textAlign = 'right';
+  const put = (t, y, size, col, bold) => { x.fillStyle = col; x.font = `${bold ? 'bold ' : ''}${size}px Tahoma, Arial, sans-serif`; x.fillText(t, 1120, y); };
+  put('نسخة احتياطية - برنامج الكاشير', 95, 56, '#fff', true);
+  put(db.settings.shop || '', 230, 46, '#000', true);
+  put('تاريخ النسخة: ' + fmtDate(new Date()), 305, 36, '#333');
+  put('عدد المنتجات: ' + db.products.length, 395, 38, '#000');
+  put('فواتير المبيعات: ' + db.sales.length, 455, 38, '#000');
+  put('فواتير المشتريات: ' + db.purchases.length, 515, 38, '#000');
+  put('العملاء: ' + db.customers.length, 575, 38, '#000');
+  put('تنبيه: الملف ده فيه كل بيانات البرنامج، احتفظ بيه ومتعدلوش.', 690, 32, '#c62828', true);
+  put('للاسترجاع: الإعدادات ثم استرجاع نسخة (PDF) ثم اختار الملف ده.', 745, 32, '#333');
+  const jpeg = atob(c.toDataURL('image/jpeg', 0.92).split(',')[1]);
+  const pdf = buildPDF(jpeg, JSON.stringify(db));
+  const u = new Uint8Array(pdf.length);
+  for (let i = 0; i < pdf.length; i++) u[i] = pdf.charCodeAt(i);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(db)], { type: 'application/json' }));
-  a.download = 'cashier-backup-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
+  a.href = URL.createObjectURL(new Blob([u], { type: 'application/pdf' }));
+  a.download = 'cashier-backup-' + new Date().toISOString().slice(0, 10) + '.pdf'; a.click();
 }
 function importData(file) {
   if (!file) return;
   const fr = new FileReader();
   fr.onload = () => {
-    try {
-      const d = JSON.parse(fr.result);
-      if (!d.products || !d.sales) throw 0;
-      if (!confirm('الاسترجاع هيمسح البيانات الحالية ويحط النسخة دي. متأكد؟')) return;
-      localStorage.setItem(KEY, JSON.stringify(d)); location.reload();
-    } catch (e) { alert('الملف مش نسخة صحيحة'); }
+    let d = null;
+    try { d = extractBackup(new TextDecoder('latin1').decode(new Uint8Array(fr.result))); } catch (e) {}
+    if (!d || !d.products || !d.sales) return alert('الملف ده مش نسخة احتياطية صحيحة. اختار ملف الـ PDF اللي طلع من "تصدير نسخة".');
+    if (!confirm('الاسترجاع هيمسح البيانات الحالية ويحط النسخة دي. متأكد؟')) return;
+    localStorage.setItem(KEY, JSON.stringify(d)); location.reload();
   };
-  fr.readAsText(file);
+  fr.readAsArrayBuffer(file);
 }
 
 /* ===== تشغيل ===== */

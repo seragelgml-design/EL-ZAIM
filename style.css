@@ -49,11 +49,19 @@ td.act{display:flex;gap:5px}
 .row .lt{min-width:48px;text-align:center;font-weight:700}
 .row .x{background:none;border:0;color:var(--r);font-size:18px;cursor:pointer}
 .tot{font-size:17px;margin:10px 0}
+.ac{position:relative}
+.sug{position:absolute;top:100%;right:0;left:0;background:#fff;border:1px solid var(--p);border-radius:8px;max-height:220px;overflow-y:auto;z-index:30;box-shadow:0 6px 18px #0003;margin-top:2px}
+.sug[hidden]{display:none}
+.si{padding:9px 10px;border-bottom:1px solid var(--b);cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.si:last-child{border-bottom:0}
+.si:hover,.si:active{background:#e8f0fb}
+.si small{color:var(--m);white-space:nowrap}
+.si.none{color:var(--m);cursor:default}
 .stampprev{max-width:160px;max-height:160px;border:1px dashed var(--b);padding:6px;border-radius:8px;display:block;margin:8px 0}
 .note{color:var(--m);font-size:13px;line-height:1.7}
 @media(max-width:600px){
   .row,.row.pu{grid-template-columns:1fr 1fr 1fr auto auto}
-  .row select.p,.row input.n{grid-column:1/-1}
+  .row .ac,.row input.n{grid-column:1/-1}
   .row.pu input.sp{grid-column:auto}
 }
 @media(min-width:800px){
