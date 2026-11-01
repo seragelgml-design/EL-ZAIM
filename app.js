@@ -5,11 +5,16 @@
    كلمة السر الحالية (تجريبية): 123456  ← غيرها قبل الاستخدام الفعلي!
    ============================================================ */
 const APP_AUTH = {
-  PASS_SALT: '8bdd8825c96cac3b',
-  PASS_HASH: '8ce4d993616cddb756fe5da69cb2acff58d3eaffcd5d59b70b6123375f317012',
+   PASS_SALT: '0be0c1c5661ad1af',
+  PASS_HASH: '5c12c8c8d425a36b65c46b3543d1babcb44289e8962447bda493717a8247b7aa',
   REMEMBER: true   // true = تدخل كلمة السر مرة واحدة بس على كل جهاز | false = تطلبها كل مرة تقفل المتصفح
 };
-const APP_VERSION = 'v7';
+
+/* اسم البرنامج: بيظهر فوق في البرنامج، وفوق شاشة كلمة السر، وفي عنوان التبويب.
+   غيّره لأي اسم تحبه (مثلاً 'الإيمان' أو 'الحمد')، احفظ الملف وارفعه على الاستضافة. */
+const APP_NAME = 'الزعيم لمهامات المكاتب';
+
+const APP_VERSION = 'v8';
 /* ============================================================ */
 
 /* ===== برنامج الكاشير - كل البيانات بتتحفظ في المتصفح (localStorage) ===== */
@@ -21,6 +26,12 @@ var store = {
   del(k) { try { localStorage.removeItem(k); } catch (e) {} try { sessionStorage.removeItem(k); } catch (e) {} }
 };
 const $ = s => document.querySelector(s);
+function applyAppName() {
+  document.title = APP_NAME;
+  const t = $('#shopTitle'); if (t) t.textContent = APP_NAME;
+  const m = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if (m) m.setAttribute('content', APP_NAME);
+}
+applyAppName();
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US');
 const money = n => num(n) + ' ج.م';
@@ -48,7 +59,7 @@ function go(p) {
   page = p; store.set('cashier_page', p);
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.p === p));
   $('#pageTitle').textContent = titles[p];
-  $('#shopTitle').textContent = db.settings.shop || 'برنامج الكاشير';
+  applyAppName();
   pages[p]();
   window.scrollTo(0, 0);
 }
@@ -483,7 +494,7 @@ function saveSettings() {
   db.settings.shop = $('#s_shop').value.trim() || 'اسم المحل';
   db.settings.phone = $('#s_phone').value.trim();
   db.settings.lowStock = Math.max(0, +$('#s_low').value || 0);
-  save(); $('#shopTitle').textContent = db.settings.shop; alert('تم الحفظ ✅');
+  save(); alert('تم الحفظ ✅');
 }
 function loadStamp(file) {
   if (!file) return;
@@ -535,7 +546,7 @@ function exportData() {
   x.fillStyle = '#1565c0'; x.fillRect(0, 0, 1190, 150);
   x.direction = 'rtl'; x.textAlign = 'right';
   const put = (t, y, size, col, bold) => { x.fillStyle = col; x.font = `${bold ? 'bold ' : ''}${size}px Tahoma, Arial, sans-serif`; x.fillText(t, 1120, y); };
-  put('نسخة احتياطية - برنامج الكاشير', 95, 56, '#fff', true);
+  put('نسخة احتياطية - ' + APP_NAME, 95, 56, '#fff', true);
   put(db.settings.shop || '', 230, 46, '#000', true);
   put('تاريخ النسخة: ' + fmtDate(new Date()), 305, 36, '#333');
   put('عدد المنتجات: ' + db.products.length, 395, 38, '#000');
@@ -622,7 +633,7 @@ function ensureLoginUI() {
   if (!l) { l = document.createElement('div'); l.id = 'login'; document.body.prepend(l); }
   l.style.cssText = 'position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:linear-gradient(160deg,#1565c0,#0d47a1);overflow:auto';
   l.innerHTML = `<form id="loginForm" autocomplete="off" action="javascript:void(0)" onsubmit="return false" style="background:#fff;border-radius:14px;padding:26px 22px;width:100%;max-width:340px;text-align:center;box-shadow:0 10px 30px #0004">
-    <div style="font-size:42px">🔒</div><h2 style="margin:6px 0">برنامج الكاشير</h2>
+    <div style="font-size:42px">🔒</div><h2 style="margin:6px 0">${esc(APP_NAME)}</h2>
     <p style="color:#6b7785;margin:0 0 12px;font-size:14px">اكتب كلمة السر عشان تفتح البرنامج</p>
     <input id="pw" type="password" placeholder="كلمة السر" autocomplete="current-password" style="text-align:center;margin-bottom:10px;font-size:17px">
     <button id="pwBtn" class="btn" type="button" style="width:100%;padding:11px">دخول</button>
