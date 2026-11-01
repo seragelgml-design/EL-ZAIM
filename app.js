@@ -615,10 +615,28 @@ function ensureLoginUI() {
     <div id="pwErr" style="color:#e53935;margin-top:10px;min-height:20px;font-size:14px;font-weight:600"></div></form>`;
 }
 function loginMsg(t, ok) { const e = $('#pwErr'); if (e) { e.style.color = ok ? '#2e7d32' : '#e53935'; e.textContent = t; } }
+/* لو config.js مش متحمل: نحمله بنفسنا، ولو فشل نقول السبب بالظبط */
+function loadConfig() {
+  return new Promise(res => {
+    if (cfgOk()) return res();
+    const sc = document.createElement('script');
+    sc.src = 'config.js?v=' + Date.now();
+    sc.onload = sc.onerror = () => res();
+    document.head.appendChild(sc);
+  });
+}
+function diagnoseConfig() {
+  loginMsg('بنتأكد من ملف config.js ...');
+  fetch('config.js?x=' + Date.now(), { cache: 'no-store' }).then(r => r.text().then(t => {
+    if (!r.ok) loginMsg(`ملف config.js مش موجود على الاستضافة (خطأ ${r.status}). ارفعه في نفس فولدر index.html وبنفس الاسم بالظبط (حروف صغيرة).`);
+    else if (/^\s*</.test(t)) loginMsg('الاستضافة بترجع صفحة تانية بدل ملف config.js، يعني الملف مش مرفوع في نفس مكان index.html.');
+    else loginMsg('ملف config.js موجود بس فيه خطأ جواه. تأكد إن PASS_SALT و PASS_HASH موجودين بين علامتي \' \' وفي آخر كل سطر فاصلة ,');
+  })).catch(() => loginMsg('مش قادر أقرأ ملف config.js. تأكد إنه مرفوع في نفس فولدر index.html.'));
+}
 let fails = 0, lockUntil = 0;
 function attemptLogin() {
   try {
-    if (!cfgOk()) return loginMsg('ملف config.js مش مرفوع على الاستضافة أو فيه خطأ. ارفعه جنب باقي الملفات.');
+    if (!cfgOk()) return loadConfig().then(() => cfgOk() ? attemptLogin() : diagnoseConfig());
     if (Date.now() < lockUntil) return loginMsg(`استنى ${Math.ceil((lockUntil - Date.now()) / 1000)} ثانية وجرب تاني`);
     const pw = $('#pw').value;
     if (!pw) return loginMsg('اكتب كلمة السر');
@@ -641,9 +659,14 @@ function showLogin() {
   setLocked(true);
   $('#pwBtn').onclick = attemptLogin;
   $('#pw').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); attemptLogin(); } };
-  if (!cfgOk()) loginMsg('تنبيه: ملف config.js مش موجود. ارفعه جنب باقي الملفات.');
+  if (!cfgOk()) diagnoseConfig();
   $('#pw').focus();
 }
 /* أي خطأ برمجي يظهر على شاشة الدخول بدل ما البرنامج يسكت */
 window.addEventListener('error', e => { const l = $('#login'); if (l && l.style.display === 'flex') loginMsg('خطأ في البرنامج: ' + e.message); });
-try { if (isAuthed()) startApp(); else showLogin(); } catch (e) { try { showLogin(); loginMsg('خطأ: ' + e.message); } catch (x) { document.body.textContent = 'خطأ: ' + e.message; } }
+/* التشغيل: نخبي البرنامج فورًا، نحمل config.js لو ناقص، وبعدين نقرر ندخل ولا نطلب كلمة السر */
+LOCKABLE.forEach(sel => { const el = $(sel); if (el) el.style.setProperty('display', 'none', 'important'); });
+loadConfig().then(() => {
+  try { if (isAuthed()) startApp(); else showLogin(); }
+  catch (e) { try { showLogin(); loginMsg('خطأ: ' + e.message); } catch (x) { document.body.textContent = 'خطأ: ' + e.message; } }
+});
