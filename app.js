@@ -1,4 +1,11 @@
 /* ===== برنامج الكاشير - كل البيانات بتتحفظ في المتصفح (localStorage) ===== */
+/* تخزين آمن: لو المتصفح منع التخزين البرنامج يفضل شغال (بس البيانات مش هتتحفظ) */
+var storageWarn = false;
+var store = {
+  get(k, area) { try { return (area || localStorage).getItem(k); } catch (e) { return null; } },
+  set(k, v, area) { try { (area || localStorage).setItem(k, v); return true; } catch (e) { if (!area) storageWarn = true; return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} try { sessionStorage.removeItem(k); } catch (e) {} }
+};
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US');
@@ -9,21 +16,22 @@ const pad = n => String(n).padStart(4, '0');
 
 const KEY = 'cashier_db_v1';
 function load() {
-  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) return d; } catch (e) {}
+  try { const d = JSON.parse(store.get(KEY)); if (d) return d; } catch (e) {}
   return { products: [], customers: [], sales: [], purchases: [], payments: [], settings: { shop: 'اسم المحل', phone: '', lowStock: 2, stamp: '' }, seq: { sale: 1, purchase: 1 } };
 }
 let db = load();
 db.settings = Object.assign({ shop: 'اسم المحل', phone: '', lowStock: 2, stamp: '' }, db.settings);
 db.seq = Object.assign({ sale: 1, purchase: 1 }, db.seq);
-function save() { localStorage.setItem(KEY, JSON.stringify(db)); }
+function save() { if (!store.set(KEY, JSON.stringify(db)) && !save.warned) { save.warned = true; alert('تنبيه: المتصفح بيمنع حفظ البيانات (غالبًا بسبب وضع الخصوصية أو فتح الملف من مكان غير مدعوم). افتح البرنامج من الرابط العادي في Chrome أو Safari عشان البيانات تتحفظ.'); } }
 
 const view = $('#view');
 const titles = { products: 'المنتجات', sales: 'المبيعات', purchases: 'المشتريات', reports: 'التقارير', customers: 'العملاء', settings: 'الإعدادات' };
 const pages = { products: renderProducts, sales: renderSales, purchases: renderPurchases, reports: renderReports, customers: renderCustomers, settings: renderSettings };
-let page = localStorage.getItem('cashier_page') || 'products';
+let page = store.get('cashier_page') || 'products';
 function go(p) {
+  if (!isAuthed()) return;
   if (!pages[p]) p = 'products';
-  page = p; localStorage.setItem('cashier_page', p);
+  page = p; store.set('cashier_page', p);
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.p === p));
   $('#pageTitle').textContent = titles[p];
   $('#shopTitle').textContent = db.settings.shop || 'برنامج الكاشير';
@@ -538,11 +546,104 @@ function importData(file) {
     try { d = extractBackup(new TextDecoder('latin1').decode(new Uint8Array(fr.result))); } catch (e) {}
     if (!d || !d.products || !d.sales) return alert('الملف ده مش نسخة احتياطية صحيحة. اختار ملف الـ PDF اللي طلع من "تصدير نسخة".');
     if (!confirm('الاسترجاع هيمسح البيانات الحالية ويحط النسخة دي. متأكد؟')) return;
-    localStorage.setItem(KEY, JSON.stringify(d)); location.reload();
+    if (!store.set(KEY, JSON.stringify(d))) return alert('المتصفح بيمنع حفظ البيانات، مش هينفع الاسترجاع.');
+    location.reload();
   };
   fr.readAsArrayBuffer(file);
 }
 
 /* ===== تشغيل ===== */
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
-go(page);
+
+/* ===== كلمة السر (الهاش والـ salt في config.js بس) ===== */
+
+function sha256x(str) {
+  const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  const b = new TextEncoder().encode(str);
+  const l = b.length, n = ((l + 9 + 63) >> 6) << 6, m = new Uint8Array(n);
+  m.set(b); m[l] = 0x80;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(n - 8, Math.floor(l * 8 / 4294967296)); dv.setUint32(n - 4, (l * 8) >>> 0);
+  let h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const w = new Array(64);
+  const rr = (x, k) => (x >>> k) | (x << (32 - k));
+  for (let o = 0; o < n; o += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rr(w[i-15],7) ^ rr(w[i-15],18) ^ (w[i-15] >>> 3), s1 = rr(w[i-2],17) ^ rr(w[i-2],19) ^ (w[i-2] >>> 10);
+      w[i] = (w[i-16] + s0 + w[i-7] + s1) | 0;
+    }
+    let [a,bb,c,d,e,f,g,hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rr(e,6) ^ rr(e,11) ^ rr(e,25), ch = (e & f) ^ (~e & g), t1 = (hh + S1 + ch + K[i] + w[i]) | 0;
+      const S0 = rr(a,2) ^ rr(a,13) ^ rr(a,22), mj = (a & bb) ^ (a & c) ^ (bb & c), t2 = (S0 + mj) | 0;
+      hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0;
+    }
+    h = [(h[0]+a)|0,(h[1]+bb)|0,(h[2]+c)|0,(h[3]+d)|0,(h[4]+e)|0,(h[5]+f)|0,(h[6]+g)|0,(h[7]+hh)|0];
+  }
+  return h.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+const AUTH_KEY = 'cashier_auth';
+let memAuth = false; // لو التخزين ممنوع، الدخول يفضل شغال لحد ما الصفحة تتقفل
+const cfgOk = () => typeof CONFIG !== 'undefined' && CONFIG && CONFIG.PASS_HASH && CONFIG.PASS_SALT;
+function isAuthed() {
+  if (memAuth) return true;
+  if (!cfgOk()) return false;
+  let ss = null; try { ss = sessionStorage; } catch (e) {}
+  return store.get(AUTH_KEY) === CONFIG.PASS_HASH || (ss && store.get(AUTH_KEY, ss) === CONFIG.PASS_HASH);
+}
+const LOCKABLE = ['header', 'nav', 'main', '#modal'];
+/* القفل بيتعمل بالـ JavaScript مباشرة (inline) عشان يشتغل حتى لو style.css قديم */
+function setLocked(on) {
+  document.body.classList.toggle('locked', on);
+  LOCKABLE.forEach(sel => { const el = $(sel); if (el) { if (on) el.style.setProperty('display', 'none', 'important'); else el.style.removeProperty('display'); } });
+  const l = $('#login'); if (l) l.style.display = on ? 'flex' : 'none';
+}
+function startApp() { setLocked(false); go(page); }
+function logout() { memAuth = false; store.del(AUTH_KEY); location.reload(); }
+/* شاشة الدخول بتتبني كلها من هنا (بالتنسيق جواها) فمش بتعتمد على index.html ولا style.css */
+function ensureLoginUI() {
+  let l = $('#login');
+  if (!l) { l = document.createElement('div'); l.id = 'login'; document.body.prepend(l); }
+  l.style.cssText = 'position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:linear-gradient(160deg,#1565c0,#0d47a1);overflow:auto';
+  l.innerHTML = `<form id="loginForm" autocomplete="off" action="javascript:void(0)" onsubmit="return false" style="background:#fff;border-radius:14px;padding:26px 22px;width:100%;max-width:340px;text-align:center;box-shadow:0 10px 30px #0004">
+    <div style="font-size:42px">🔒</div><h2 style="margin:6px 0">برنامج الكاشير</h2>
+    <p style="color:#6b7785;margin:0 0 12px;font-size:14px">اكتب كلمة السر عشان تفتح البرنامج</p>
+    <input id="pw" type="password" placeholder="كلمة السر" autocomplete="current-password" style="text-align:center;margin-bottom:10px;font-size:17px">
+    <button id="pwBtn" class="btn" type="button" style="width:100%;padding:11px">دخول</button>
+    <div id="pwErr" style="color:#e53935;margin-top:10px;min-height:20px;font-size:14px;font-weight:600"></div></form>`;
+}
+function loginMsg(t, ok) { const e = $('#pwErr'); if (e) { e.style.color = ok ? '#2e7d32' : '#e53935'; e.textContent = t; } }
+let fails = 0, lockUntil = 0;
+function attemptLogin() {
+  try {
+    if (!cfgOk()) return loginMsg('ملف config.js مش مرفوع على الاستضافة أو فيه خطأ. ارفعه جنب باقي الملفات.');
+    if (Date.now() < lockUntil) return loginMsg(`استنى ${Math.ceil((lockUntil - Date.now()) / 1000)} ثانية وجرب تاني`);
+    const pw = $('#pw').value;
+    if (!pw) return loginMsg('اكتب كلمة السر');
+    const h = sha256x(CONFIG.PASS_SALT + pw);
+    if (h === CONFIG.PASS_HASH) {
+      memAuth = true; fails = 0;
+      try { store.set(AUTH_KEY, h, CONFIG.REMEMBER ? localStorage : sessionStorage); } catch (e) {}
+      $('#pw').value = ''; loginMsg('');
+      startApp();
+    } else {
+      fails++;
+      if (fails % 3 === 0) { lockUntil = Date.now() + 30000; loginMsg('محاولات كتير غلط، استنى 30 ثانية'); }
+      else loginMsg('كلمة السر غلط ❌');
+      $('#pw').value = ''; $('#pw').focus();
+    }
+  } catch (err) { loginMsg('حصل خطأ: ' + (err && err.message || err)); }
+}
+function showLogin() {
+  ensureLoginUI();
+  setLocked(true);
+  $('#pwBtn').onclick = attemptLogin;
+  $('#pw').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); attemptLogin(); } };
+  if (!cfgOk()) loginMsg('تنبيه: ملف config.js مش موجود. ارفعه جنب باقي الملفات.');
+  $('#pw').focus();
+}
+/* أي خطأ برمجي يظهر على شاشة الدخول بدل ما البرنامج يسكت */
+window.addEventListener('error', e => { const l = $('#login'); if (l && l.style.display === 'flex') loginMsg('خطأ في البرنامج: ' + e.message); });
+try { if (isAuthed()) startApp(); else showLogin(); } catch (e) { try { showLogin(); loginMsg('خطأ: ' + e.message); } catch (x) { document.body.textContent = 'خطأ: ' + e.message; } }
