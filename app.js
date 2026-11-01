@@ -1,3 +1,17 @@
+/* ============================================================
+   كلمة السر - مكانها الوحيد هنا في الكود (مفيش أي شاشة في البرنامج بتغيرها).
+   لتغييرها: افتح make-password.html على جهازك، اكتب كلمة السر الجديدة،
+   وانسخ السطرين اللي هيطلعوا واستبدل بيهم PASS_SALT و PASS_HASH تحت، وارفع الملف.
+   كلمة السر الحالية (تجريبية): 123456  ← غيرها قبل الاستخدام الفعلي!
+   ============================================================ */
+const APP_AUTH = {
+  PASS_SALT: '8bdd8825c96cac3b',
+  PASS_HASH: '8ce4d993616cddb756fe5da69cb2acff58d3eaffcd5d59b70b6123375f317012',
+  REMEMBER: true   // true = تدخل كلمة السر مرة واحدة بس على كل جهاز | false = تطلبها كل مرة تقفل المتصفح
+};
+const APP_VERSION = 'v7';
+/* ============================================================ */
+
 /* ===== برنامج الكاشير - كل البيانات بتتحفظ في المتصفح (localStorage) ===== */
 /* تخزين آمن: لو المتصفح منع التخزين البرنامج يفضل شغال (بس البيانات مش هتتحفظ) */
 var storageWarn = false;
@@ -555,7 +569,7 @@ function importData(file) {
 /* ===== تشغيل ===== */
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-/* ===== كلمة السر (الهاش والـ salt في config.js بس) ===== */
+/* ===== منطق كلمة السر ===== */
 
 function sha256x(str) {
   const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
@@ -586,12 +600,12 @@ function sha256x(str) {
 
 const AUTH_KEY = 'cashier_auth';
 let memAuth = false; // لو التخزين ممنوع، الدخول يفضل شغال لحد ما الصفحة تتقفل
-const cfgOk = () => typeof CONFIG !== 'undefined' && CONFIG && CONFIG.PASS_HASH && CONFIG.PASS_SALT;
+const cfgOk = () => true;
 function isAuthed() {
   if (memAuth) return true;
   if (!cfgOk()) return false;
   let ss = null; try { ss = sessionStorage; } catch (e) {}
-  return store.get(AUTH_KEY) === CONFIG.PASS_HASH || (ss && store.get(AUTH_KEY, ss) === CONFIG.PASS_HASH);
+  return store.get(AUTH_KEY) === APP_AUTH.PASS_HASH || (ss && store.get(AUTH_KEY, ss) === APP_AUTH.PASS_HASH);
 }
 const LOCKABLE = ['header', 'nav', 'main', '#modal'];
 /* القفل بيتعمل بالـ JavaScript مباشرة (inline) عشان يشتغل حتى لو style.css قديم */
@@ -612,44 +626,25 @@ function ensureLoginUI() {
     <p style="color:#6b7785;margin:0 0 12px;font-size:14px">اكتب كلمة السر عشان تفتح البرنامج</p>
     <input id="pw" type="password" placeholder="كلمة السر" autocomplete="current-password" style="text-align:center;margin-bottom:10px;font-size:17px">
     <button id="pwBtn" class="btn" type="button" style="width:100%;padding:11px">دخول</button>
-    <div id="pwErr" style="color:#e53935;margin-top:10px;min-height:20px;font-size:14px;font-weight:600"></div></form>`;
+    <div id="pwErr" style="color:#e53935;margin-top:10px;min-height:20px;font-size:14px;font-weight:600"></div><div style="color:#aab;font-size:11px;margin-top:6px">${APP_VERSION}</div></form>`;
 }
 function loginMsg(t, ok) { const e = $('#pwErr'); if (e) { e.style.color = ok ? '#2e7d32' : '#e53935'; e.textContent = t; } }
-/* لو config.js مش متحمل: نحمله بنفسنا، ولو فشل نقول السبب بالظبط */
-function loadConfig() {
-  return new Promise(res => {
-    if (cfgOk()) return res();
-    const sc = document.createElement('script');
-    sc.src = 'config.js?v=' + Date.now();
-    sc.onload = sc.onerror = () => res();
-    document.head.appendChild(sc);
-  });
-}
-function diagnoseConfig() {
-  loginMsg('بنتأكد من ملف config.js ...');
-  fetch('config.js?x=' + Date.now(), { cache: 'no-store' }).then(r => r.text().then(t => {
-    if (!r.ok) loginMsg(`ملف config.js مش موجود على الاستضافة (خطأ ${r.status}). ارفعه في نفس فولدر index.html وبنفس الاسم بالظبط (حروف صغيرة).`);
-    else if (/^\s*</.test(t)) loginMsg('الاستضافة بترجع صفحة تانية بدل ملف config.js، يعني الملف مش مرفوع في نفس مكان index.html.');
-    else loginMsg('ملف config.js موجود بس فيه خطأ جواه. تأكد إن PASS_SALT و PASS_HASH موجودين بين علامتي \' \' وفي آخر كل سطر فاصلة ,');
-  })).catch(() => loginMsg('مش قادر أقرأ ملف config.js. تأكد إنه مرفوع في نفس فولدر index.html.'));
-}
 let fails = 0, lockUntil = 0;
 function attemptLogin() {
   try {
-    if (!cfgOk()) return loadConfig().then(() => cfgOk() ? attemptLogin() : diagnoseConfig());
     if (Date.now() < lockUntil) return loginMsg(`استنى ${Math.ceil((lockUntil - Date.now()) / 1000)} ثانية وجرب تاني`);
     const pw = $('#pw').value;
     if (!pw) return loginMsg('اكتب كلمة السر');
-    const h = sha256x(CONFIG.PASS_SALT + pw);
-    if (h === CONFIG.PASS_HASH) {
+    const h = sha256x(APP_AUTH.PASS_SALT + pw);
+    if (h === APP_AUTH.PASS_HASH) {
       memAuth = true; fails = 0;
-      try { store.set(AUTH_KEY, h, CONFIG.REMEMBER ? localStorage : sessionStorage); } catch (e) {}
+      try { store.set(AUTH_KEY, h, APP_AUTH.REMEMBER ? localStorage : sessionStorage); } catch (e) {}
       $('#pw').value = ''; loginMsg('');
       startApp();
     } else {
       fails++;
       if (fails % 3 === 0) { lockUntil = Date.now() + 30000; loginMsg('محاولات كتير غلط، استنى 30 ثانية'); }
-      else loginMsg('كلمة السر غلط ❌');
+      else loginMsg('كلمة السر خطأ ❌');
       $('#pw').value = ''; $('#pw').focus();
     }
   } catch (err) { loginMsg('حصل خطأ: ' + (err && err.message || err)); }
@@ -659,14 +654,11 @@ function showLogin() {
   setLocked(true);
   $('#pwBtn').onclick = attemptLogin;
   $('#pw').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); attemptLogin(); } };
-  if (!cfgOk()) diagnoseConfig();
   $('#pw').focus();
 }
 /* أي خطأ برمجي يظهر على شاشة الدخول بدل ما البرنامج يسكت */
 window.addEventListener('error', e => { const l = $('#login'); if (l && l.style.display === 'flex') loginMsg('خطأ في البرنامج: ' + e.message); });
-/* التشغيل: نخبي البرنامج فورًا، نحمل config.js لو ناقص، وبعدين نقرر ندخل ولا نطلب كلمة السر */
+/* التشغيل: نخبي البرنامج فورًا، وبعدين نقرر ندخل ولا نطلب كلمة السر */
 LOCKABLE.forEach(sel => { const el = $(sel); if (el) el.style.setProperty('display', 'none', 'important'); });
-loadConfig().then(() => {
-  try { if (isAuthed()) startApp(); else showLogin(); }
-  catch (e) { try { showLogin(); loginMsg('خطأ: ' + e.message); } catch (x) { document.body.textContent = 'خطأ: ' + e.message; } }
-});
+try { if (isAuthed()) startApp(); else showLogin(); }
+catch (e) { try { showLogin(); loginMsg('خطأ: ' + e.message); } catch (x) { document.body.textContent = 'خطأ: ' + e.message; } }

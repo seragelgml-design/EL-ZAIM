@@ -14,10 +14,20 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="locked">
+<div id="login">
+  <form id="loginForm" autocomplete="off">
+    <div class="lock">🔒</div>
+    <h2>برنامج الكاشير</h2>
+    <p>اكتب كلمة السر عشان تفتح البرنامج</p>
+    <input id="pw" type="password" placeholder="كلمة السر" autocomplete="current-password">
+    <button class="btn" type="submit">دخول</button>
+    <div id="pwErr"></div>
+  </form>
+</div>
 <header>
   <b id="shopTitle">برنامج الكاشير</b>
-  <span id="pageTitle"></span>
+  <span style="display:flex;gap:12px;align-items:center"><span id="pageTitle"></span><button id="logout" class="btn sm" style="background:#0d47a1" onclick="logout()">🔓 خروج</button></span>
 </header>
 
 <nav id="nav">
@@ -32,6 +42,6 @@
 <main id="view"></main>
 <div id="modal" class="overlay" hidden></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
